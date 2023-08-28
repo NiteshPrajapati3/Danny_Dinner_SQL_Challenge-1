@@ -1,0 +1,210 @@
+--CREATE TABLE sales (
+--  "customer_id" VARCHAR(1),
+--  "order_date" DATE,
+--  "product_id" INTEGER
+--);
+
+--INSERT INTO sales
+--  ("customer_id", "order_date", "product_id")
+--VALUES
+--  ('A', '2021-01-01', '1'),
+--  ('A', '2021-01-01', '2'),
+--  ('A', '2021-01-07', '2'),
+--  ('A', '2021-01-10', '3'),
+--  ('A', '2021-01-11', '3'),
+--  ('A', '2021-01-11', '3'),
+--  ('B', '2021-01-01', '2'),
+--  ('B', '2021-01-02', '2'),
+--  ('B', '2021-01-04', '1'),
+--  ('B', '2021-01-11', '1'),
+--  ('B', '2021-01-16', '3'),
+--  ('B', '2021-02-01', '3'),
+--  ('C', '2021-01-01', '3'),
+--  ('C', '2021-01-01', '3'),
+--  ('C', '2021-01-07', '3');
+ 
+
+--CREATE TABLE menu (
+--  "product_id" INTEGER,
+--  "product_name" VARCHAR(5),
+--  "price" INTEGER
+--);
+
+--INSERT INTO menu
+--  ("product_id", "product_name", "price")
+--VALUES
+--  ('1', 'sushi', '10'),
+--  ('2', 'curry', '15'),
+--  ('3', 'ramen', '12');
+  
+
+--CREATE TABLE members (
+--  "customer_id" VARCHAR(1),
+--  "join_date" DATE
+--);
+
+--INSERT INTO members
+--  ("customer_id", "join_date")
+--VALUES
+--  ('A', '2021-01-07'),
+--  ('B', '2021-01-09');
+
+SELECT * FROM Danny_Diner.dbo.sales;
+SELECT * FROM Danny_Diner.dbo.menu;
+SELECT * FROM Danny_Diner.dbo.members;
+
+
+-- 1. What is the total amount each customer spent at the restaurant?
+SELECT s.customer_id , SUM(m.price) AS Total_Amount_Spent
+FROM Danny_Diner.dbo.sales s 
+JOIN Danny_Diner.dbo.menu m ON s.product_id = m.product_id
+GROUP BY s.customer_id
+ORDER BY s.customer_id;
+
+--2. How many days has each customer visited the restaurant?
+SELECT customer_id, 
+	COUNT(DISTINCT order_date) AS Total_days_visited
+FROM Danny_Diner.dbo.sales 
+GROUP BY customer_id
+ORDER BY customer_id;
+
+
+-- 3. What was the first item from the menu purchased by each customer?
+ WITH CTE as 
+ (SELECT "customer_id", "order_date", a."product_id",product_name,min("order_date") OVER(partition by customer_id)
+             as Min_Date
+FROM Danny_Diner.dbo.sales  as a inner join Danny_Diner.dbo.menu as b
+ON a.product_id = b.product_id )
+
+SELECT "customer_id",product_name
+ FROM CTE
+ WHERE "order_date"=Min_Date
+ GROUP BY   "customer_id",product_name 
+
+-- 4. What is the most purchased item on the menu and how many times was it purchased by all customers?
+
+SELECT 
+    M.product_id,
+	product_name,
+	price,
+	COUNT(S.product_id) AS total_purchases
+FROM Danny_Diner.dbo.menu AS M
+INNER JOIN Danny_Diner.dbo.sales AS S
+ON M.product_id= S.product_id
+GROUP BY M.product_id, product_name, price
+ORDER BY total_purchases DESC
+;
+
+
+
+-- 5. Which item was the most popular for each customer?
+
+WITH popular_items AS (
+  SELECT 
+      customer_id, 
+	  product_id, 
+	  COUNT(*) AS order_count,
+         ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY COUNT(*) DESC) AS rn
+  FROM Danny_Diner.dbo.sales
+  GROUP BY customer_id, product_id
+)
+SELECT 
+    p.customer_id, 
+	m.product_name AS most_popular_item
+FROM popular_items p
+JOIN Danny_Diner.dbo.menu m 
+ON p.product_id = m.product_id
+WHERE p.rn = 1
+ORDER BY p.customer_id;
+
+
+
+-- 6. Which item  was purchased first by the customer after they became a member?
+
+SELECT 
+    m.customer_id, 
+	m.join_date, 
+	MIN(s.order_date) AS first_purchase_date, 
+	u.product_name AS first_purchase_item
+FROM Danny_Diner.dbo.members m
+JOIN Danny_Diner.dbo.sales s ON m.customer_id = s.customer_id
+JOIN Danny_Diner.dbo.menu u ON s.product_id = u.product_id
+WHERE s.order_date > m.join_date
+GROUP BY m.customer_id, m.join_date, u.product_name
+ORDER BY m.customer_id;
+
+
+
+-- 7. Which item was purchased just before the customer became a member?
+
+SELECT 
+    m.customer_id, 
+	m.join_date, 
+	MAX(s.order_date) AS last_purchase_date,
+	u.product_name AS last_purchase_item
+FROM Danny_Diner.dbo.members m
+JOIN Danny_Diner.dbo.sales s 
+ON m.customer_id = s.customer_id
+JOIN Danny_Diner.dbo.menu u 
+ON s.product_id = u.product_id
+WHERE s.order_date < m.join_date
+GROUP BY m.customer_id, m.join_date, u.product_name
+ORDER BY m.customer_id;
+
+
+-- 8. What is the total items and amount spent for each member before they became a member?
+
+SELECT 
+     m.customer_id, 
+	 m.join_date,
+     COUNT(s.product_id) AS total_items,
+     SUM(u.price) AS total_amount_spent
+FROM Danny_Diner.dbo.members m
+JOIN Danny_Diner.dbo.sales s 
+ON m.customer_id = s.customer_id
+JOIN Danny_Diner.dbo.menu u 
+ON s.product_id = u.product_id
+WHERE s.order_date < m.join_date
+GROUP BY m.customer_id, m.join_date
+ORDER BY m.customer_id;
+
+
+-- 9.  If each $1 spent equates to 10 points and sushi has a 2x points multiplier - how many points would each customer have?
+
+SELECT 
+     s.customer_id, 
+SUM(
+  CASE
+    WHEN m.product_name = 'sushi' THEN 20 * m.price
+    ELSE 10 * m.price
+  END
+) AS total_points
+FROM Danny_Diner.dbo.sales s
+JOIN Danny_Diner.dbo.menu m 
+ON s.product_id = m.product_id
+GROUP BY s.customer_id
+ORDER BY s.customer_id;
+
+
+-- 10. In the first week after a customer joins the program (including their join date) they earn 2x points on all items, not just sushi - how many points do customer A and B have at the end of January?
+ 
+WITH customer_points AS (
+  SELECT s.customer_id, s.order_date, u.product_name,
+         CASE WHEN u.product_name = 'sushi' THEN
+         CASE WHEN s.order_date <= DATEADD(DAY, 6, m.join_date) THEN 20 * u.price
+              ELSE 10 * u.price END
+              ELSE
+         CASE WHEN s.order_date <= DATEADD(DAY, 6, m.join_date) THEN 20 * u.price
+              ELSE 10 * u.price END
+           END AS points
+  FROM Danny_Diner.dbo.sales s
+  JOIN Danny_Diner.dbo.menu u ON s.product_id = u.product_id
+  JOIN Danny_Diner.dbo.members m ON s.customer_id = m.customer_id
+  WHERE s.order_date <= '2021-01-31' -- End of January
+    AND (s.order_date >= m.join_date OR s.order_date <= DATEADD(DAY, 6, m.join_date))
+)
+SELECT customer_id, SUM(points) AS total_points
+FROM customer_points
+WHERE customer_id IN ('A', 'B')
+GROUP BY customer_id
+ORDER BY customer_id;
